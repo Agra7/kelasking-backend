@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.js";
 import authMiddleware from "./middleware/authMiddleware.js";
+import projectRoutes from "./routes/project/index.js";
 
 dotenv.config();
 const app = express();
@@ -14,7 +15,12 @@ app.get("/", (req, res) => {
   res.send("API is running 🚀");
 });
 
+// Auth
 app.use("/api/auth", authRoutes);
+
+// Projects
+app.use("/api/project", projectRoutes);
+
 
 // Start server
 app.listen(5000, () => {
