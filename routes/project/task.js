@@ -1,8 +1,10 @@
 import express from "express";
 import supabase from "../../db.js";
 import authMiddleware from "../../middleware/authMiddleware.js";
+import uploadRoutes from "./upload.js";
 
 const router = express.Router({ mergeParams: true });
+router.use("/:taskId/upload", uploadRoutes);
 
 // Get all tasks for a project
 router.get("/", authMiddleware, async (req, res) => {
