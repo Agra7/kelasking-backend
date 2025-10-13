@@ -14,25 +14,20 @@ router.post("/register", async (req, res) => {
   }
 
   try {
-    // Hash password
-    const hashed = await bcrypt.hash(password, 10);
-
-    // Insert user
-    const { error } = await supabase.from("User").insert([
-      {
-        user_name,
-        email,
-        password_hash: hashed,
-        role,
-      },
-    ]);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { user_name, role } // metadata passed to trigger
+      }
+    });
 
     if (error) throw error;
 
-    res.json({ message: "User registered!" });
+    res.json({ message: "User registered!", user: data.user });
   } catch (err) {
     console.error("Register error:", err);
-    res.status(400).json({ error: err.message || "Unknown error" });
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -45,36 +40,23 @@ router.post("/login", async (req, res) => {
   }
 
   try {
-    // Fetch user by email
-    const { data: users, error } = await supabase
-      .from("User")
-      .select("*")
-      .eq("email", email)
-      .limit(1);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) throw error;
 
-    const user = users[0];
-    if (!user) return res.status(400).json({ error: "User not found" });
+    const { session, user } = data;
 
-    // Compare password
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) return res.status(400).json({ error: "Invalid password" });
-
-    // Generate JWT
-    const token = jwt.sign(
-      { id: user.user_id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
-
+    // Return Supabase's own session token
     res.json({
-      token,
+      token: session.access_token,
       user: {
-        id: user.user_id,
-        name: user.user_name,
+        id: user.id,
+        name: user.user_metadata?.user_name || "Unnamed",
         email: user.email,
-        role: user.role,
+        role: user.user_metadata?.role || "user",
       },
     });
   } catch (err) {
