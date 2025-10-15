@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.js";
+import staffRouter from "./routes/staff.js";
 import authMiddleware from "./middleware/authMiddleware.js";
 import projectRoutes from "./routes/project/index.js";
 
@@ -21,6 +22,8 @@ app.use("/api/auth", authRoutes);
 // Projects
 app.use("/api/project", projectRoutes);
 
+// Staff
+app.use("/staff", staffRouter);
 
 // Start server
 app.listen(5000, () => {
