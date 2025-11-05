@@ -1,4 +1,6 @@
 import express from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import supabase from "../db.js";
 
 const router = express.Router();
@@ -8,96 +10,129 @@ async function verifyAdmin(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "Missing token" });
 
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data?.user) return res.status(401).json({ error: "Invalid or expired token" });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Get user from database to check role
+    const { data: user, error } = await supabase
+      .from("User")
+      .select("*")
+      .eq("id", decoded.id)
+      .single();
 
-  const role = data.user.user_metadata?.role;
-  if (role !== "admin") return res.status(403).json({ error: "Admin access required" });
+    if (error || !user) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    
+    if (user.role !== "admin") {
+      return res.status(403).json({ error: "Admin access required" });
+    }
 
-  req.user = data.user;
-  next();
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
 }
 
-// Add Staff
+// POST - Add staff (admin only)
 router.post("/add", verifyAdmin, async (req, res) => {
-  const { name, email, password, role, phone_number, birth_date, origin } = req.body;
+  const { user_nama, email, password, role, jabatan, ttl, no_hp } = req.body;
 
-  if (!name || !email || !password || !role)
+  if (!user_nama || !email || !password || !role) {
     return res.status(400).json({ error: "Missing required fields" });
-
-  try {
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { 
-        user_name: name, 
-        role,
-        phone_number,
-        birth_date,
-        origin
-      },
-    });
-
-    if (authError) throw authError;
-
-    res.json({
-      message: "Staff added successfully! They can now login and change their password.",
-      staff: {
-        id: authData.user.id,
-        email,
-        name,
-        role,
-      },
-    });
-  } catch (err) {
-    console.error("Add staff error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Change Password (Staff)
-router.put("/change-password", async (req, res) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Missing token" });
-
-  const { currentPassword, newPassword } = req.body;
-
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: "Current password and new password are required" });
-  }
-
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: "New password must be at least 6 characters" });
   }
 
   try {
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return res.status(401).json({ error: "Invalid or expired token" });
-    }
+    const password_hash = await bcrypt.hash(password, 10);
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: userData.user.email,
-      password: currentPassword,
-    });
-
-    if (signInError) {
-      return res.status(401).json({ error: "Current password is incorrect" });
-    }
-
-    const { data, error } = await supabase.auth.admin.updateUserById(
-      userData.user.id,
-      { password: newPassword }
-    );
+    const { data, error } = await supabase
+      .from("User")
+      .insert([{ user_nama, email, password_hash, role, jabatan, ttl, no_hp }])
+      .select();
 
     if (error) throw error;
 
     res.json({
-      message: "Password changed successfully! Please login again with your new password.",
+      message: "Staff added successfully!",
+      staff: { 
+        id: data[0].id, 
+        email, 
+        user_nama, 
+        role 
+      },
     });
   } catch (err) {
-    console.error("Change password error:", err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET - List all staff (admin only)
+router.get("/", verifyAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("User")
+      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url");
+
+    if (error) throw error;
+
+    res.json({ staff: data });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET - Get single staff member (admin only)
+router.get("/:id", verifyAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("User")
+      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url")
+      .eq("id", req.params.id)
+      .single();
+
+    if (error) throw error;
+
+    res.json({ staff: data });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// PUT - Update staff (admin only)
+router.put("/:id", verifyAdmin, async (req, res) => {
+  const { user_nama, email, role, jabatan, ttl, no_hp } = req.body;
+
+  try {
+    const { data, error } = await supabase
+      .from("User")
+      .update({ user_nama, email, role, jabatan, ttl, no_hp })
+      .eq("id", req.params.id)
+      .select();
+
+    if (error) throw error;
+
+    res.json({
+      message: "Staff updated successfully!",
+      staff: data[0],
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE - Delete staff (admin only)
+router.delete("/:id", verifyAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from("User")
+      .delete()
+      .eq("id", req.params.id);
+
+    if (error) throw error;
+
+    res.json({ message: "Staff deleted successfully!" });
+  } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
