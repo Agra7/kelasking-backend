@@ -1,4 +1,16 @@
 import jwt from "jsonwebtoken";
+import cors from "cors";
+import express from "express";
+
+const app = express();
+
+// CORS configuration
+app.use(cors({
+    origin: "http://localhost:3000", // ganti dengan domain frontend kamu
+    credentials: true, // penting agar cookie ikut dikirim
+  })
+);
+
 
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -16,5 +28,8 @@ async function authMiddleware(req, res, next) {
     return res.status(403).json({ error: "Invalid or expired token" });
   }
 }
+
+
+
 
 export default authMiddleware;

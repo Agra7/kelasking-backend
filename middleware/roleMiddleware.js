@@ -1,6 +1,16 @@
 // Middleware to check user roles
 // Usage: router.get("/admin-only", authMiddleware, requireRole(["admin"]), handler)
+import express from "express";
+import cors from "cors";
 
+const app = express();
+
+// CORS configuration
+app.use(cors({
+    origin: "http://localhost:3000", // ganti dengan domain frontend kamu
+    credentials: true, // penting agar cookie ikut dikirim
+  })
+);
 export function requireRole(allowedRoles) {
   return (req, res, next) => {
     if (!req.user || !req.user.role) {

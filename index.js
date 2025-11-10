@@ -6,9 +6,21 @@ import profileRouter from "./routes/profile.js";
 import authMiddleware from "./middleware/authMiddleware.js";
 import { requireAdmin, requireSales, requirePM, requireStaff } from "./middleware/roleMiddleware.js";
 import projectRoutes from "./routes/project/index.js";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+
+
 
 dotenv.config();
 const app = express();
+
+app.use(cookieParser());
+// CORS configuration
+app.use(cors({
+    origin: "http://localhost:3000", // ganti dengan domain frontend kamu
+    credentials: true, // penting agar cookie ikut dikirim
+  })
+);
 
 // Middleware
 app.use(express.json());
@@ -77,6 +89,9 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: "Something went wrong!" });
 });
+
+
+
 
 // Start server
 const PORT = process.env.PORT || 5000;

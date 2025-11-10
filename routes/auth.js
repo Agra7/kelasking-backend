@@ -9,7 +9,7 @@ const router = express.Router();
 
 // REGISTRATION - Only admins can register new users (handled in staff.js)
 
-// LOGIN - Returns access token (15min) and refresh token (7 days)
+// LOGIN - Returns access token (1hin) and refresh token (7 days)
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   
@@ -36,11 +36,11 @@ router.post("/login", async (req, res) => {
     }
     
     // Generate tokens
-    // Access token expires in 15 minutes
+    // Access token expires in 60 minutes
     const accessToken = jwt.sign(
       { id: user.id, role: user.role }, 
       process.env.JWT_SECRET, 
-      { expiresIn: '15m' }
+      { expiresIn: '1h' }
     );
     
     // Refresh token expires in 7 days (but auto-logout after 1 hour of inactivity on frontend)
@@ -56,9 +56,18 @@ router.post("/login", async (req, res) => {
       .update({ refresh_token: refreshToken })
       .eq("id", user.id);
     
+    // ✅ Kirim refresh token sebagai HttpOnly cookie
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,       // tidak bisa dibaca JavaScript
+      secure: true,         // hanya dikirim via HTTPS
+      sameSite: "strict",   // mencegah CSRF
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 hari
+      path: "/",            // cookie dikirim untuk semua route
+    });
+
+
     res.json({ 
-      accessToken, 
-      refreshToken, 
+      accessToken,  
       user: {
         id: user.id,
         user_nama: user.user_nama,
@@ -67,6 +76,7 @@ router.post("/login", async (req, res) => {
         jabatan: user.jabatan
       }
     });
+
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -74,7 +84,7 @@ router.post("/login", async (req, res) => {
 
 // REFRESH TOKEN - Get new access token using refresh token
 router.post("/refresh", async (req, res) => {
-  const { refreshToken } = req.body;
+  const refreshToken = req.cookies.refreshToken;
   
   if (!refreshToken) {
     return res.status(401).json({ error: "Refresh token required" });
@@ -100,7 +110,7 @@ router.post("/refresh", async (req, res) => {
     const accessToken = jwt.sign(
       { id: user.id, role: user.role }, 
       process.env.JWT_SECRET, 
-      { expiresIn: '15m' }
+      { expiresIn: '1h' }
     );
 
     res.json({ accessToken });
@@ -167,9 +177,7 @@ router.post("/forgot-password", async (req, res) => {
       })
       .eq("id", user.id);
 
-    // TODO: Send email with reset link
-    // Reset link format: http://yourfrontend.com/reset-password?token=resetToken
-    // For now, we'll return it in the response (REMOVE THIS IN PRODUCTION)
+
     
     res.json({ 
       message: "If an account exists with this email, a password reset link has been sent.",
@@ -300,5 +308,7 @@ router.put("/change-password", authMiddleware, async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+
 
 export default router;

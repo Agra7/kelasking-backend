@@ -32,7 +32,7 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
     );
 
     // Count taken/accepted projects (has PIC assigned)
-    const takenProjects = allProjects.filter(p => p.pic !== null);
+    const takenProjects = allProjects.filter(p => p.ID_pic !== null);
 
     // Count projects close to deadline (within 7 days)
     const closeToDeadline = allProjects.filter(p => {
@@ -61,7 +61,7 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
       client: p.client,
       deadline: p.deadline,
       status: p.status,
-      has_pic: p.pic !== null
+      has_ID_pic: p.ID_pic !== null
     }));
 
     const closeToDeadlineList = closeToDeadline.map(p => {
@@ -73,7 +73,7 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
         client: p.client,
         deadline: p.deadline,
         days_until_deadline: daysUntil,
-        pic: p.pic
+        ID_pic: p.ID_pic
       };
     });
 
@@ -86,7 +86,7 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
         client: p.client,
         deadline: p.deadline,
         days_overdue: daysOverdue,
-        pic: p.pic
+        ID_pic: p.ID_pic
       };
     });
 
@@ -170,10 +170,10 @@ router.get("/", authMiddleware, async (req, res) => {
               id,
               po,
               client,
-              pic,
+              ID_pic,
               deadline,
               status,
-              nama_sales
+              ID_sales
             )
           `)
           .or(`UserID_1.eq.${userId},UserID_2.eq.${userId},UserID_3.eq.${userId}`);
@@ -238,7 +238,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
       
       case "PM":
         // PM can see if they are PIC or if no PIC assigned
-        hasAccess = project.pic === userId || project.pic === null;
+        hasAccess = project.ID_pic === userId || project.ID_pic === null;
         break;
       
       case "staff":
@@ -270,7 +270,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // POST - Create project (Admin & Sales only)
 // ============================================
 router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
-  const { po, client, deadline, status, nama_sales, pic } = req.body;
+  const { po, client, deadline, status, ID_sales, ID_pic } = req.body;
   
   if (!po || !client) {
     return res.status(400).json({ error: "PO and client are required" });
@@ -283,23 +283,27 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
       .insert([{ 
         po, 
         client, 
-        pic: pic || null, // PIC can be null initially
+        ID_pic: ID_pic || null, // PIC can be null initially
         deadline, 
         status: status || "active", 
-        nama_sales: nama_sales || req.user.id // Default to creator if sales
+        ID_sales: ID_sales || req.user.id // Default to creator if sales
       }])
-      .select()
+      .select(`
+        *,
+        PIC:ID_pic ( user_nama ),
+        Sales:ID_sales ( user_nama )
+      `)
       .single();
 
     if (projectError) throw projectError;
 
     // Create ProjectXUser entry if PIC is assigned
-    if (pic) {
+    if (ID_pic) {
       const { error: pxuError } = await supabase
         .from("ProjectXUser")
         .insert([{
           ProjectID: project.id,
-          UserID_PIC: pic,
+          UserID_PIC: ID_pic,
           UserID_1: null,
           UserID_2: null,
           UserID_3: null
@@ -319,7 +323,7 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
 // ============================================
 router.put("/:id", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
   const { id } = req.params;
-  const updates = req.body; // Can contain: po, client, pic, deadline, status, nama_sales
+  const updates = req.body; // Can contain: po, client, pic, deadline, status, ID_sales
 
   try {
     const { data, error } = await supabase
@@ -351,20 +355,20 @@ router.put("/:id/accept", authMiddleware, requireRole(["PM"]), async (req, res) 
     // Check if project exists and has no PIC
     const { data: project, error: checkError } = await supabase
       .from("Project")
-      .select("pic")
+      .select("ID_pic")
       .eq("id", id)
       .single();
 
     if (checkError) throw checkError;
 
-    if (project.pic !== null) {
-      return res.status(400).json({ error: "Project already has a PIC" });
+    if (project.ID_pic !== null) {
+      return res.status(400).json({ error: "Project sudah diambil" });
     }
 
     // Assign PM as PIC
     const { data, error } = await supabase
       .from("Project")
-      .update({ pic: userId })
+      .update({ ID_pic: userId })
       .eq("id", id)
       .select();
 
@@ -418,13 +422,13 @@ router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
     // Verify user is PIC of this project
     const { data: project, error: projectError } = await supabase
       .from("Project")
-      .select("pic")
+      .select("ID_pic")
       .eq("id", id)
       .single();
 
     if (projectError) throw projectError;
     
-    if (project.pic !== userId && req.user.role !== "admin") {
+    if (project.ID_pic !== userId && req.user.role !== "admin") {
       return res.status(403).json({ error: "Only PIC or admin can assign staff" });
     }
 

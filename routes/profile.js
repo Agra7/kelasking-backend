@@ -56,8 +56,20 @@ router.get("/me", authMiddleware, async (req, res) => {
 });
 
 // PUT - Update current user's profile
-router.put("/me", authMiddleware, async (req, res) => {
+router.put("/:id", authMiddleware, async (req, res) => {
+  const targetId = req.params.id;
+    const { id: viewerId, role: viewerRole } = req.user;
+
+  // Check if viewer has permission to see this profile
+  const hasPermission = await canViewProfile(viewerId, viewerRole, targetId);
+
   const { user_nama, jabatan, ttl, no_hp } = req.body;
+
+  if (!hasPermission) {
+      return res.status(403).json({ 
+        error: "You don't have permission to update this profile" 
+      });
+    }
 
   try {
     const updates = {};
@@ -69,7 +81,7 @@ router.put("/me", authMiddleware, async (req, res) => {
     const { data, error } = await supabase
       .from("User")
       .update(updates)
-      .eq("id", req.user.id)
+      .eq("id", targetId)
       .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url");
 
     if (error) throw error;
