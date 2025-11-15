@@ -94,7 +94,6 @@ async function hasProjectAccess(userId, userRole, projectId) {
    ===================================================== */
 router.get("/", authMiddleware, async (req, res) => {
   const { projectId } = req.params;
-  const { id: userId, role: userRole } = req.user;
 
   try {
     const { data: tasks, error } = await supabase

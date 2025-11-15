@@ -97,7 +97,7 @@ router.get("/role/:role", authMiddleware, async (req, res) => {
 
     const { data, error } = await supabase
       .from("User")
-      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url")
+      .select("id, user_nama, email, jabatan, ttl, no_hp, image_url")
       .eq("role", role);
 
     if (error) throw error;
@@ -162,7 +162,7 @@ router.put("/:id/image", authMiddleware, upload.single("image"), async (req, res
       .from("User")
       .update({ image_url: newImageUrl })
       .eq("id", targetId)
-      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url");
+      .select("id, user_nama, email, jabatan, ttl, no_hp, image_url");
 
     if (error) throw error;
 

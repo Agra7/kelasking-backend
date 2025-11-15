@@ -315,22 +315,22 @@ router.get("/:id", authMiddleware, async (req, res) => {
          UserID_PIC:UserID_PIC(
       id,
       user_nama,
-      role
+      jabatan
         ),
         UserID_1:UserID_1(
           id,
           user_nama,
-          role
+          jabatan
         ),
         UserID_2:UserID_2(
           id,
           user_nama,
-          role
+          jabatan
         ),
         UserID_3:UserID_3(
           id,
           user_nama,
-          role
+          jabatan
         )
       `)
       .eq("ProjectID", projectId)
@@ -537,11 +537,11 @@ router.put("/:id/accept", authMiddleware, requireRole(["pm"]), async (req, res) 
 // ============================================
 router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { staff_ids } = req.body; // Array of up to 3 staff user IDs
+  const { emailStaff } = req.body; // Array of up to 3 staff user IDs
   const userId = req.user.id;
 
-  if (!Array.isArray(staff_ids) || staff_ids.length > 3) {
-    return res.status(400).json({ error: "staff_ids must be an array with max 3 items" });
+  if (!Array.isArray(emailStaff) || emailStaff.length > 3) {
+    return res.status(400).json({ error: "emailStaff must be an array with max 3 items" });
   }
 
   try {
@@ -558,23 +558,33 @@ router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Only PIC or admin can assign staff" });
     }
 
+    // Get user IDs for the provided staff emails
+    const { data: staff_ids, error: staffError } = await supabase
+      .from("User")
+      .select("id")
+      .in("email", emailStaff);
+    if (staffError) throw staffError;
+
+    
+    const staffIdList = staff_ids.map(staff => staff.id);
+
     // Update ProjectXUser
     const { data: staffList, error } = await supabase
       .from("ProjectXUser")
       .update({
-        UserID_1: staff_ids[0] || null,
-        UserID_2: staff_ids[1] || null,
-        UserID_3: staff_ids[2] || null
+        UserID_1: staffIdList[0] || null,
+        UserID_2: staffIdList[1] || null,
+        UserID_3: staffIdList[2] || null
       })
       .eq("ProjectID", id)
        .select(`
-          *,
-          PIC:UserID_PIC ( id, user_nama, role ),
-          Staff1:UserID_1 ( id, user_nama, role ),
-          Staff2:UserID_2 ( id, user_nama, role ),
-          Staff3:UserID_3 ( id, user_nama, role )
-        `)
-        .single();
+          id,
+          ProjectID,
+          PIC:UserID_PIC ( id, user_nama, jabatan, email ),
+          Staff1:UserID_1 ( id, user_nama, jabatan, email ),
+          Staff2:UserID_2 ( id, user_nama, jabatan, email ),
+          Staff3:UserID_3 ( id, user_nama, jabatan, email )
+        `);
 
     if (error) throw error;
 
