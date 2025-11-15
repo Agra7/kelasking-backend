@@ -277,7 +277,7 @@ router.post("/:taskId/upload", authMiddleware, requireRole(["staff"]), upload.si
 
     // Generate unique filename
     const ext = req.file.originalname.split(".").pop();
-    const fileName = `${Date.now()}_${req.file.originalname}`;
+    const fileName = `${req.file.originalname}`;
     const filePath = `projects/${projectId}/tasks/${taskId}/${fileName}`;
 
     // Upload to Supabase Storage
@@ -331,7 +331,7 @@ router.post("/:taskId/upload", authMiddleware, requireRole(["staff"]), upload.si
    ===================================================== */
 router.put("/:taskId/verify", authMiddleware, requireRole(["PM", "admin"]), async (req, res) => {
   const { projectId, taskId } = req.params;
-  const { verified, feedback } = req.body;
+  const { verified } = req.body;
   const { id: userId, role: userRole } = req.user;
 
   try {
@@ -357,13 +357,13 @@ router.put("/:taskId/verify", authMiddleware, requireRole(["PM", "admin"]), asyn
       .from("Task")
       .update({ 
         status: newStatus,
-        verified_at: verified ? new Date().toISOString() : null,
-        verified_by: verified ? userId : null,
-        feedback: feedback || null
+        verified_by: verified ? userId : null
       })
       .eq("id", taskId)
       .eq("project_id", projectId)
-      .select();
+      .select(`*,
+        VerifiedBy:Task_verified_by_fkey ( id, user_nama )  
+      `);
 
     if (error) throw error;
 
@@ -385,7 +385,7 @@ router.get("/:taskId/upload", authMiddleware, async (req, res) => {
 
     const { data: task, error } = await supabase
       .from("Task")
-      .select("file_url, uploaded_by")
+      .select("file_url, uploaded_by:Task_uploaded_by_fkey ( id, user_nama )")
       .eq("id", taskId)
       .eq("project_id", projectId)
       .single();
@@ -414,23 +414,8 @@ router.get("/:taskId/upload", authMiddleware, async (req, res) => {
 router.delete("/:taskId/upload", authMiddleware, requireRole(["admin", "PM"]), async (req, res) => {
   try {
     const { taskId, projectId } = req.params;
-    const { id: userId, role: userRole } = req.user;
 
-    // If PM, verify they are PIC
-    if (userRole === "PM") {
-      const { data: project } = await supabase
-        .from("Project")
-        .select("pic")
-        .eq("id", projectId)
-        .single();
-
-      if (!project || project.pic !== userId) {
-        return res.status(403).json({ 
-          error: "Only the PIC can delete files from this project" 
-        });
-      }
-    }
-
+   
     // Get current file URL
     const { data: task, error: taskError } = await supabase
       .from("Task")
@@ -476,56 +461,7 @@ router.delete("/:taskId/upload", authMiddleware, requireRole(["admin", "PM"]), a
   }
 });
 
-/* =====================================================
-   ✅ 8. PUT verify task (PM or Admin only)
-   PM verifies uploaded file and approves/rejects
-   ===================================================== */
-router.put("/:taskId/verify", authMiddleware, requireRole(["PM", "admin"]), async (req, res) => {
-  const { projectId, taskId } = req.params;
-  const { verified, feedback } = req.body;
-  const { id: userId, role: userRole } = req.user;
 
-  try {
-    // If PM, check if they are PIC of this project
-    if (userRole === "PM") {
-      const { data: project } = await supabase
-        .from("Project")
-        .select("pic")
-        .eq("id", projectId)
-        .single();
-
-      if (!project || project.pic !== userId) {
-        return res.status(403).json({ 
-          error: "Only the PIC can verify tasks on this project" 
-        });
-      }
-    }
-
-    // Update task status based on verification
-    const newStatus = verified ? "done" : "revision_needed";
-    
-    const { data, error } = await supabase
-      .from("Task")
-      .update({ 
-        status: newStatus,
-        verified_at: verified ? new Date().toISOString() : null,
-        verified_by: verified ? userId : null,
-        feedback: feedback || null
-      })
-      .eq("id", taskId)
-      .eq("project_id", projectId)
-      .select();
-
-    if (error) throw error;
-
-    res.json({ 
-      message: verified ? "Task verified and marked as done!" : "Task needs revision",
-      task: data[0] 
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
 
 /* =====================================================
    ✅ 9. DELETE task (ADMIN ONLY)
