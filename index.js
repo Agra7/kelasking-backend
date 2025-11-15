@@ -1,10 +1,10 @@
 import express from "express";
 import dotenv from "dotenv";
+import authMiddleware from "./middleware/authMiddleware.js";
+import { requireAdmin, requireSales, requirePM, requireStaff } from "./middleware/roleMiddleware.js";
 import authRoutes from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import profileRouter from "./routes/profile.js";
-import authMiddleware from "./middleware/authMiddleware.js";
-import { requireAdmin, requireSales, requirePM, requireStaff } from "./middleware/roleMiddleware.js";
 import projectRoutes from "./routes/project/index.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -95,6 +95,6 @@ app.use((err, req, res, next) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0",  () => {
   console.log(`Server running on port ${PORT}`);
 });

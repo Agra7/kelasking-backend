@@ -2,8 +2,13 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import supabase from "../db.js";
+import multer from "multer";
 
 const router = express.Router();
+
+// Setup multer (memory storage biar bisa langsung upload ke Supabase)
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 // Middleware: Verify Admin Token
 async function verifyAdmin(req, res, next) {
@@ -36,7 +41,7 @@ async function verifyAdmin(req, res, next) {
 }
 
 // POST - Add staff (admin only)
-router.post("/add", verifyAdmin, async (req, res) => {
+router.post("/add", verifyAdmin, upload.single("image"), async (req, res) => {
   const { user_nama, email, password, role, jabatan, ttl, no_hp } = req.body;
 
   if (!user_nama || !email || !password || !role) {
@@ -49,92 +54,129 @@ router.post("/add", verifyAdmin, async (req, res) => {
     const { data, error } = await supabase
       .from("User")
       .insert([{ user_nama, email, password_hash, role, jabatan, ttl, no_hp }])
-      .select();
+      .select("id");
 
     if (error) throw error;
+    let image_url = null;
+    // If image is provided, upload to Supabase Storage
+    if (req.file) {
+      const fileExt = req.file.originalname.split(".").pop();
+      const fileName = `user_${data[0].id}_${Date.now()}.${fileExt}`;
+      const filePath = `Uploaded/${fileName}`;
+
+
+      const { error: uploadError } = await supabase.storage
+        .from("Avatar")
+        .upload(filePath, req.file.buffer, {
+          cacheControl: "3600",
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+        .from("Avatar")
+        .getPublicUrl(filePath);
+
+        image_url = publicUrlData.publicUrl;
+
+      // Update user record with image URL
+      const { error: updateError } = await supabase
+        .from("User")
+        .update({ image_url })
+        .eq("id", data[0].id);
+        
+      if (updateError) throw updateError;
+    }
+      const { data: user, UserError } = await supabase
+      .from("User")
+      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url")
+      .eq("id", data[0].id)
+      .single();
+
+      if (error) throw UserError;
 
     res.json({
       message: "Staff added successfully!",
-      staff: { 
-        id: data[0].id, 
-        email, 
-        user_nama, 
-        role 
-      },
+        user
+      
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// GET - List all staff (admin only)
-router.get("/", verifyAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("User")
-      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url");
 
-    if (error) throw error;
 
-    res.json({ staff: data });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+// // GET - List all staff (admin only)
+// router.get("/", verifyAdmin, async (req, res) => {
+//   try {
+//     const { data, error } = await supabase
+//       .from("User")
+//       .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url");
 
-// GET - Get single staff member (admin only)
-router.get("/:id", verifyAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("User")
-      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url")
-      .eq("id", req.params.id)
-      .single();
+//     if (error) throw error;
 
-    if (error) throw error;
+//     res.json({ staff: data });
+//   } catch (err) {
+//     res.status(400).json({ error: err.message });
+//   }
+// });
 
-    res.json({ staff: data });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+// // GET - Get single staff member (admin only)
+// router.get("/:id", verifyAdmin, async (req, res) => {
+//   try {
+//     const { data, error } = await supabase
+//       .from("User")
+//       .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url")
+//       .eq("id", req.params.id)
+//       .single();
 
-// PUT - Update staff (admin only)
-router.put("/:id", verifyAdmin, async (req, res) => {
-  const { user_nama, email, role, jabatan, ttl, no_hp } = req.body;
+//     if (error) throw error;
 
-  try {
-    const { data, error } = await supabase
-      .from("User")
-      .update({ user_nama, email, role, jabatan, ttl, no_hp })
-      .eq("id", req.params.id)
-      .select();
+//     res.json({ staff: data });
+//   } catch (err) {
+//     res.status(400).json({ error: err.message });
+//   }
+// });
 
-    if (error) throw error;
+// // PUT - Update staff (admin only)
+// router.put("/:id", verifyAdmin, async (req, res) => {
+//   const { user_nama, email, role, jabatan, ttl, no_hp } = req.body;
 
-    res.json({
-      message: "Staff updated successfully!",
-      staff: data[0],
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+//   try {
+//     const { data, error } = await supabase
+//       .from("User")
+//       .update({ user_nama, email, role, jabatan, ttl, no_hp })
+//       .eq("id", req.params.id)
+//       .select();
 
-// DELETE - Delete staff (admin only)
-router.delete("/:id", verifyAdmin, async (req, res) => {
-  try {
-    const { error } = await supabase
-      .from("User")
-      .delete()
-      .eq("id", req.params.id);
+//     if (error) throw error;
 
-    if (error) throw error;
+//     res.json({
+//       message: "Staff updated successfully!",
+//       staff: data[0],
+//     });
+//   } catch (err) {
+//     res.status(400).json({ error: err.message });
+//   }
+// });
 
-    res.json({ message: "Staff deleted successfully!" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+// // DELETE - Delete staff (admin only)
+// router.delete("/:id", verifyAdmin, async (req, res) => {
+//   try {
+//     const { error } = await supabase
+//       .from("User")
+//       .delete()
+//       .eq("id", req.params.id);
+
+//     if (error) throw error;
+
+//     res.json({ message: "Staff deleted successfully!" });
+//   } catch (err) {
+//     res.status(400).json({ error: err.message });
+//   }
+// });
 
 export default router;

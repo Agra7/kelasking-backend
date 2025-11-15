@@ -11,6 +11,7 @@ app.use(cors({
     credentials: true, // penting agar cookie ikut dikirim
   })
 );
+
 export function requireRole(allowedRoles) {
   return (req, res, next) => {
     if (!req.user || !req.user.role) {

@@ -16,10 +16,8 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
     // Get all projects with their details
     const { data: allProjects, error: projectsError } = await supabase
       .from("Project")
-      .select(`
-        *,
-        ProjectXUser!inner(UserID_PIC)
-      `);
+      .select(`*`)
+      .eq("status", 'active');
 
     if (projectsError) throw projectsError;
 
@@ -39,7 +37,7 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
       if (!p.deadline) return false;
       const deadline = new Date(p.deadline);
       const daysUntil = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
-      return daysUntil >= 0 && daysUntil <= 7;
+      return daysUntil >= 0 && daysUntil <= 2;
     });
 
     // Count projects past deadline
@@ -50,59 +48,16 @@ router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res)
     });
 
     // Count finished projects
-    const finishedProjects = allProjects.filter(p => 
-      p.status === 'completed' || p.status === 'finished'
-    );
-
-    // Get detailed lists
-    const activeList = activeProjects.map(p => ({
-      id: p.id,
-      po: p.po,
-      client: p.client,
-      deadline: p.deadline,
-      status: p.status,
-      has_ID_pic: p.ID_pic !== null
-    }));
-
-    const closeToDeadlineList = closeToDeadline.map(p => {
-      const deadline = new Date(p.deadline);
-      const daysUntil = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
-      return {
-        id: p.id,
-        po: p.po,
-        client: p.client,
-        deadline: p.deadline,
-        days_until_deadline: daysUntil,
-        ID_pic: p.ID_pic
-      };
-    });
-
-    const pastDeadlineList = pastDeadline.map(p => {
-      const deadline = new Date(p.deadline);
-      const daysOverdue = Math.ceil((today - deadline) / (1000 * 60 * 60 * 24));
-      return {
-        id: p.id,
-        po: p.po,
-        client: p.client,
-        deadline: p.deadline,
-        days_overdue: daysOverdue,
-        ID_pic: p.ID_pic
-      };
-    });
+    // const finishedProjects = allProjects.filter(p => 
+    //   p.status === 'completed' || p.status === 'finished'
+    // );
 
     res.json({
       overview: {
-        total_projects: allProjects.length,
         active_projects: activeProjects.length,
         taken_projects: takenProjects.length,
         close_to_deadline: closeToDeadline.length,
-        past_deadline: pastDeadline.length,
-        finished_projects: finishedProjects.length
-      },
-      details: {
-        active_projects: activeList,
-        close_to_deadline: closeToDeadlineList,
-        past_deadline: pastDeadlineList
+        past_deadline: pastDeadline.length
       }
     });
   } catch (err) {
@@ -126,9 +81,16 @@ router.get("/", authMiddleware, async (req, res) => {
         query = supabase
           .from("Project")
           .select(`
-            *,
+            id,
+            po,
+            client,
+            deadline,
+            status,
+            PIC:Project_ID_pic_fkey ( user_nama ),
+            Sales:Project_ID_sales_fkey ( user_nama ),
             ProjectXUser(UserID_PIC, UserID_1, UserID_2, UserID_3)
-          `);
+          `)
+          .order("deadline", { ascending: true }); // urutkan deadline dari paling dekat;
         
         if (status === 'active') {
           query = query.or("status.eq.active,status.eq.ongoing");
@@ -199,6 +161,137 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 // ============================================
+// GET - Taken Projects List
+// Shows all projects with PIC assigned (status: Taken)
+// Admin & Sales: see all
+// PM & Staff: see only ones they're involved in
+// ============================================
+router.get("/taken", authMiddleware, async (req, res) => {
+  try {
+    const { id: userId, role: userRole } = req.user;
+
+    let query = supabase
+      .from("Project")
+      .select(`
+        *,
+        PIC:Project_ID_pic_fkey ( user_nama ),
+        Sales:Project_ID_sales_fkey ( user_nama )
+      `)
+      .not("ID_pic", "is", null)
+      .order("deadline", { ascending: true }); // urutkan deadline dari paling dekat
+
+    // Filter based on role
+    if (userRole === "PM") {
+      // PM sees only projects where they are PIC
+      query = query.eq("ID_pic", userId);
+    } else if (userRole === "staff") {
+      // Staff sees only projects they're assigned to
+      // This requires joining through ProjectXUser
+      const { data: staffProjects, error: staffError } = await supabase
+        .from("ProjectXUser")
+        .select(`
+          Project:ProjectID (
+            *
+          )
+        `)
+        .or(
+          `
+          UserID_1.eq.${userId},UserID_2.eq.${userId},UserID_3.eq.${userId}
+          `);
+
+      if (staffError) throw staffError;
+
+      const projects = staffProjects
+        .map(item => item.Project)
+        .filter(p => p !== null && p.pic !== null);
+
+      return res.json({ projects });
+    }
+
+    // Admin & Sales see all taken projects
+    const { data, error } = await query;
+    if (error) throw error;
+
+    res.json({ projects: data });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================
+// GET - Available Projects List
+// Shows all projects with no PIC (pic = null, status: Taken)
+// All roles EXCEPT staff can see these
+// ============================================
+router.get("/available", authMiddleware, async (req, res) => {
+  try {
+
+
+
+    const { data, error } = await supabase
+      .from("Project")
+      .select(`
+        *,
+        PIC:Project_ID_pic_fkey ( user_nama ),
+        Sales:Project_ID_sales_fkey ( user_nama )
+        `)
+      .is("ID_pic", null) // PIC is null
+      .order("deadline", { ascending: true }); // urutkan deadline dari paling dekat
+
+    if (error) throw error;
+
+    res.json({ projects: data });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================
+// GET - Active Projects List
+// Shows all unfinished projects (status: Taken)
+// Only Admin & Sales can see
+// ============================================
+// router.get("/active", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
+//   try {
+//     const { data, error } = await supabase
+//       .from("Project")
+//       .select(`
+//         *
+//       `)
+//       .eq("status", "Taken");
+
+//     if (error) throw error;
+
+//     res.json({ projects: data });
+//   } catch (err) {
+//     res.status(400).json({ error: err.message });
+//   }
+// });
+
+// ============================================
+// GET - History Projects List
+// Shows all finished projects (status: Done)
+// Only Admin can see
+// ============================================
+router.get("/history", authMiddleware, requireRole(["admin"]), async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("Project")
+      .select(`
+        *
+      `)
+      .eq("status", "done");
+
+    if (error) throw error;
+
+    res.json({ projects: data });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+
+// ============================================
 // GET - Get single project details
 // ============================================
 router.get("/:id", authMiddleware, async (req, res) => {
@@ -218,7 +311,28 @@ router.get("/:id", authMiddleware, async (req, res) => {
     // Get ProjectXUser data
     const { data: projectUsers, error: pxuError } = await supabase
       .from("ProjectXUser")
-      .select("*")
+      .select(`
+         UserID_PIC:UserID_PIC(
+      id,
+      user_nama,
+      role
+        ),
+        UserID_1:UserID_1(
+          id,
+          user_nama,
+          role
+        ),
+        UserID_2:UserID_2(
+          id,
+          user_nama,
+          role
+        ),
+        UserID_3:UserID_3(
+          id,
+          user_nama,
+          role
+        )
+      `)
       .eq("ProjectID", projectId)
       .single();
 
@@ -258,7 +372,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     res.json({ 
       project: { 
         ...project, 
-        users: projectUsers 
+        team: projectUsers 
       } 
     });
   } catch (err) {
@@ -270,11 +384,21 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // POST - Create project (Admin & Sales only)
 // ============================================
 router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
-  const { po, client, deadline, status, ID_sales, ID_pic } = req.body;
+  let { po, client, deadline, status, ID_sales, ID_pic } = req.body;
+  const userRole = req.user.role;
   
   if (!po || !client) {
     return res.status(400).json({ error: "PO and client are required" });
   }
+
+  if (userRole == "sales") {
+    // Sales can only assign themselves as ID_sales
+    ID_sales = req.user.id;
+  }
+  else{ 
+    if (!ID_sales) {
+    return res.status(400).json({ error: "ID_sales is required" });
+  }}
 
   try {
     // Insert project
@@ -286,7 +410,7 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
         ID_pic: ID_pic || null, // PIC can be null initially
         deadline, 
         status: status || "active", 
-        ID_sales: ID_sales || req.user.id // Default to creator if sales
+        ID_sales: ID_sales  // Default to creator if sales
       }])
       .select(`
         *,
@@ -347,7 +471,7 @@ router.put("/:id", authMiddleware, requireRole(["admin", "sales"]), async (req, 
 // ============================================
 // PUT - Assign/Accept Project (PM only)
 // ============================================
-router.put("/:id/accept", authMiddleware, requireRole(["PM"]), async (req, res) => {
+router.put("/:id/accept", authMiddleware, requireRole(["pm"]), async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
 
@@ -406,6 +530,8 @@ router.put("/:id/accept", authMiddleware, requireRole(["PM"]), async (req, res) 
   }
 });
 
+
+
 // ============================================
 // PUT - Assign staff to project (PIC only)
 // ============================================
@@ -433,7 +559,7 @@ router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
     }
 
     // Update ProjectXUser
-    const { data, error } = await supabase
+    const { data: staffList, error } = await supabase
       .from("ProjectXUser")
       .update({
         UserID_1: staff_ids[0] || null,
@@ -441,16 +567,24 @@ router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
         UserID_3: staff_ids[2] || null
       })
       .eq("ProjectID", id)
-      .select();
+       .select(`
+          *,
+          PIC:UserID_PIC ( id, user_nama, role ),
+          Staff1:UserID_1 ( id, user_nama, role ),
+          Staff2:UserID_2 ( id, user_nama, role ),
+          Staff3:UserID_3 ( id, user_nama, role )
+        `)
+        .single();
 
     if (error) throw error;
+
 
     // TODO: Send email invitations to assigned staff
     // You can implement this later using SendGrid, Mailgun, etc.
 
     res.json({ 
       message: "Staff assigned successfully!", 
-      assigned_staff: staff_ids 
+      assigned_staff: staffList 
     });
   } catch (err) {
     res.status(400).json({ error: err.message });

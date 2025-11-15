@@ -54,18 +54,21 @@ async function canModifyProject(userId, userRole, projectId) {
 async function hasProjectAccess(userId, userRole, projectId) {
   const { data: project } = await supabase
     .from("Project")
-    .select("pic")
+    .select("ID_pic")
     .eq("id", projectId)
     .single();
 
   if (!project) return false;
 
+  
+
   switch (userRole) {
     case "admin":
+      return true;
     case "sales":
       return true;
     
-    case "PM":
+    case "pm":
       return project.pic === userId || project.pic === null;
     
     case "staff":
@@ -153,7 +156,7 @@ router.get("/:taskId", authMiddleware, async (req, res) => {
    ===================================================== */
 router.post("/", authMiddleware, async (req, res) => {
   const { projectId } = req.params;
-  const { nama, deskripsi, deadline } = req.body;
+  const { nama, deskripsi } = req.body;
   const { id: userId, role: userRole } = req.user;
 
   if (!nama) {
@@ -182,7 +185,7 @@ router.post("/", authMiddleware, async (req, res) => {
         nama,
         deskripsi,
         status: "not_started",
-        deadline
+        created_at: new Date().toISOString()
       }])
       .select();
 
@@ -289,7 +292,7 @@ router.post("/:taskId/upload", authMiddleware, requireRole(["staff"]), upload.si
       .from("file_upload")
       .upload(filePath, req.file.buffer, {
         contentType: req.file.mimetype,
-        upsert: false,
+        upsert: true,
       });
 
     if (uploadError) throw uploadError;
@@ -307,12 +310,14 @@ router.post("/:taskId/upload", authMiddleware, requireRole(["staff"]), upload.si
       .update({ 
         file_url: fileUrl,
         status: "waiting_for_verification",
-        uploaded_by: userId,
-        uploaded_at: new Date().toISOString()
+        uploaded_by: userId
       })
       .eq("id", taskId)
       .eq("project_id", projectId)
-      .select();
+      .select(`
+        *,
+        UploadedBy:Task_uploaded_by_fkey ( id, user_nama)
+        `);
 
     if (updateError) throw updateError;
 
@@ -328,6 +333,57 @@ router.post("/:taskId/upload", authMiddleware, requireRole(["staff"]), upload.si
 });
 
 /* =====================================================
+   ✅ 8. PUT verify task (PM or Admin only)
+   PM verifies task completion (with or without files)
+   ===================================================== */
+router.put("/:taskId/verify", authMiddleware, requireRole(["PM", "admin"]), async (req, res) => {
+  const { projectId, taskId } = req.params;
+  const { verified, feedback } = req.body;
+  const { id: userId, role: userRole } = req.user;
+
+  try {
+    // If PM, check if they are PIC of this project
+    if (userRole === "PM") {
+      const { data: project } = await supabase
+        .from("Project")
+        .select("pic")
+        .eq("id", projectId)
+        .single();
+
+      if (!project || project.pic !== userId) {
+        return res.status(403).json({ 
+          error: "Only the PIC can verify tasks on this project" 
+        });
+      }
+    }
+
+    // Update task status based on verification
+    const newStatus = verified ? "done" : "revision_needed";
+    
+    const { data, error } = await supabase
+      .from("Task")
+      .update({ 
+        status: newStatus,
+        verified_at: verified ? new Date().toISOString() : null,
+        verified_by: verified ? userId : null,
+        feedback: feedback || null
+      })
+      .eq("id", taskId)
+      .eq("project_id", projectId)
+      .select();
+
+    if (error) throw error;
+
+    res.json({ 
+      message: verified ? "Task verified and marked as done!" : "Task needs revision",
+      task: data[0] 
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/* =====================================================
    ✅ 6. GET file info
    ===================================================== */
 router.get("/:taskId/upload", authMiddleware, async (req, res) => {
@@ -336,7 +392,7 @@ router.get("/:taskId/upload", authMiddleware, async (req, res) => {
 
     const { data: task, error } = await supabase
       .from("Task")
-      .select("file_url, uploaded_by, uploaded_at")
+      .select("file_url, uploaded_by")
       .eq("id", taskId)
       .eq("project_id", projectId)
       .single();
@@ -352,8 +408,7 @@ router.get("/:taskId/upload", authMiddleware, async (req, res) => {
 
     res.json({
       file_url: task.file_url,
-      uploaded_by: task.uploaded_by,
-      uploaded_at: task.uploaded_at
+      uploaded_by: task.uploaded_by
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -414,8 +469,7 @@ router.delete("/:taskId/upload", authMiddleware, requireRole(["admin", "PM"]), a
       .update({ 
         file_url: null,
         status: "in_progress",
-        uploaded_by: null,
-        uploaded_at: null
+        uploaded_by: null
       })
       .eq("id", taskId)
       .eq("project_id", projectId);
