@@ -97,13 +97,6 @@ router.get("/", authMiddleware, async (req, res) => {
   const { id: userId, role: userRole } = req.user;
 
   try {
-    // Check if user has access to this project
-    const hasAccess = await hasProjectAccess(userId, userRole, projectId);
-    
-    if (!hasAccess) {
-      return res.status(403).json({ error: "Access denied to this project" });
-    }
-
     const { data: tasks, error } = await supabase
       .from("Task")
       .select("*")
