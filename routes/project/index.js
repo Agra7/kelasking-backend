@@ -302,7 +302,11 @@ router.get("/:id", authMiddleware, async (req, res) => {
     // Get project
     const { data: project, error: projectError } = await supabase
       .from("Project")
-      .select("*")
+      .select(`
+        *,
+        PIC:Project_ID_pic_fkey ( user_nama),
+        Sales:Project_ID_sales_fkey ( user_nama )
+      `)
       .eq("id", projectId)
       .single();
 
@@ -384,7 +388,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // POST - Create project (Admin & Sales only)
 // ============================================
 router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
-  let { po, client, deadline, status, nama_sales} = req.body;
+  let { po, client, deadline, status, nama_sales, ID_pic} = req.body;
   const userRole = req.user.role;
   
   if (!po || !client) {
@@ -459,14 +463,42 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
 // ============================================
 router.put("/:id", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
   const { id } = req.params;
-  const updates = req.body; // Can contain: po, client, pic, deadline, status, ID_sales
+  const {po, client, ID_pic, deadline, status, nama_sales} = req.body; // Can contain: po, client, pic, deadline, status, ID_sales
 
   try {
+    
+
+    const updates = {};
+    if (po) updates.po = po;
+    if (client) updates.client = client;
+    if (ID_pic !== undefined) updates.ID_pic = ID_pic;
+    if (deadline) updates.deadline = deadline;
+    if (status) updates.status = status;
+    if (nama_sales) {
+      // Get ID_sales from nama_sales
+      const { data: salesData, error: salesError } = await supabase
+        .from("User")
+        .select("id")
+        .eq("user_nama", nama_sales) 
+        .eq("role", "sales")
+        .single();
+      if (salesError) {
+        return res.status(400).json({ error: "Nama sales tidak ditemukan" });
+      }
+      updates.ID_sales = salesData.id;
+    }
+      
+    
+
     const { data, error } = await supabase
       .from("Project")
       .update(updates)
       .eq("id", id)
-      .select();
+      .select(`
+          *,
+          PIC:ID_pic ( user_nama ),
+          Sales:ID_sales ( user_nama )
+        `).single();
 
     if (error) throw error;
     
@@ -474,7 +506,7 @@ router.put("/:id", authMiddleware, requireRole(["admin", "sales"]), async (req, 
       return res.status(404).json({ error: "Project not found" });
     }
 
-    res.json({ message: "Project updated!", project: data[0] });
+    res.json({ message: "Project updated!", project: data});
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
