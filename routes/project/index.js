@@ -104,11 +104,15 @@ router.get("/", authMiddleware, async (req, res) => {
         query = supabase
           .from("Project")
           .select(`
-            *,
+             id,
+            po,
+            client,
+            deadline,
+            status,
+            PIC:Project_ID_pic_fkey ( user_nama ),
+            Sales:Project_ID_sales_fkey ( user_nama ),
             ProjectXUser(UserID_PIC, UserID_1, UserID_2, UserID_3)
           `)
-          .or("status.eq.active,status.eq.ongoing")
-          .not("pic", "is", null); // Has PIC (taken/accepted)
         break;
 
       case "pm":
@@ -116,7 +120,13 @@ router.get("/", authMiddleware, async (req, res) => {
         query = supabase
           .from("Project")
           .select(`
-            *,
+             id,
+            po,
+            client,
+            deadline,
+            status,
+            PIC:Project_ID_pic_fkey ( user_nama ),
+            Sales:Project_ID_sales_fkey ( user_nama ),
             ProjectXUser(UserID_PIC, UserID_1, UserID_2, UserID_3)
           `)
           .or(`pic.eq.${userId},pic.is.null`)
@@ -125,20 +135,31 @@ router.get("/", authMiddleware, async (req, res) => {
 
       case "staff":
         // Staff: Only see projects they are assigned to
+
         query = supabase
           .from("ProjectXUser")
           .select(`
             Project:ProjectID (
-              id,
-              po,
-              client,
-              ID_pic,
-              deadline,
-              status,
-              ID_sales
+               id,
+            po,
+            client,
+            deadline,
+            status,
+            PIC:Project_ID_pic_fkey ( user_nama ),
+            Sales:Project_ID_sales_fkey ( user_nama ),
+            team:ProjectXUser(UserID_PIC, UserID_1, UserID_2, UserID_3)
             )
           `)
-          .or(`UserID_1.eq.${userId},UserID_2.eq.${userId},UserID_3.eq.${userId}`);
+           .or(`UserID_1.eq.${userId},UserID_2.eq.${userId},UserID_3.eq.${userId}`);
+
+            const { data, error } = await query;
+        if (error) throw error;
+
+        // === NORMALISASI ===
+        const projects = data.map((row) => ({
+          ...row.Project,
+          team: row.Project.ProjectXUser, // SAMAKAN DENGAN ROLE LAIN
+        }));  
         break;
 
       default:
@@ -362,9 +383,9 @@ router.get("/:id", authMiddleware, async (req, res) => {
       case "staff":
         // Staff can see if they are assigned
         hasAccess = projectUsers && (
-          projectUsers.UserID_1 === userId ||
-          projectUsers.UserID_2 === userId ||
-          projectUsers.UserID_3 === userId
+          projectUsers.UserID_1?.id === userId ||
+          projectUsers.UserID_2?.id === userId ||
+          projectUsers.UserID_3?.id === userId
         );
         break;
     }
