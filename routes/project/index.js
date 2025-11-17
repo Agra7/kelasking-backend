@@ -111,7 +111,7 @@ router.get("/", authMiddleware, async (req, res) => {
           .not("pic", "is", null); // Has PIC (taken/accepted)
         break;
 
-      case "PM":
+      case "pm":
         // PM: See projects taken by them + active projects without PIC
         query = supabase
           .from("Project")
@@ -181,7 +181,7 @@ router.get("/taken", authMiddleware, async (req, res) => {
       .order("deadline", { ascending: true }); // urutkan deadline dari paling dekat
 
     // Filter based on role
-    if (userRole === "PM") {
+    if (userRole === "pm") {
       // PM sees only projects where they are PIC
       query = query.eq("ID_pic", userId);
     } else if (userRole === "staff") {
@@ -350,7 +350,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         hasAccess = true; // Sales can see all projects
         break;
       
-      case "PM":
+      case "pm":
         // PM can see if they are PIC or if no PIC assigned
         hasAccess = project.ID_pic === userId || project.ID_pic === null;
         break;
@@ -384,7 +384,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // POST - Create project (Admin & Sales only)
 // ============================================
 router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
-  let { po, client, deadline, status, ID_sales, ID_pic } = req.body;
+  let { po, client, deadline, status, nama_sales} = req.body;
   const userRole = req.user.role;
   
   if (!po || !client) {
@@ -392,13 +392,25 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
   }
 
   if (userRole == "sales") {
-    // Sales can only assign themselves as ID_sales
-    ID_sales = req.user.id;
+    // Sales can only assign themselves as nama_sales
+    nama_sales = req.user.user_nama;
   }
   else{ 
-    if (!ID_sales) {
-    return res.status(400).json({ error: "ID_sales is required" });
+    if (!nama_sales) {
+    return res.status(400).json({ error: "nama sales is required" });
   }}
+
+  // Get ID_sales from nama_sales
+  const { data: ID_sales, error: salesError } = await supabase
+    .from("User")
+    .select("id")
+    .eq("user_nama", nama_sales)
+    .eq("role", "sales")
+    .single();
+  if (salesError) {
+    return res.status(400).json({ error: "Nama sales tidak ditemukan" });
+  }
+
 
   try {
     // Insert project
@@ -410,7 +422,7 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
         ID_pic: ID_pic || null, // PIC can be null initially
         deadline, 
         status: status || "active", 
-        ID_sales: ID_sales  // Default to creator if sales
+        ID_sales: ID_sales.id  // Default to creator if sales
       }])
       .select(`
         *,
