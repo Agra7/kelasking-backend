@@ -29,16 +29,10 @@ router.get("/me", authMiddleware, async (req, res) => {
 // PUT - Update user's profile
 router.put("/:id", authMiddleware, async (req, res) => {
   const targetId = req.params.id;
-    const { id: viewerId, role: viewerRole } = req.user;
 
 
   const { user_nama, email, jabatan, ttl, no_hp } = req.body;
 
-  if (!hasPermission) {
-      return res.status(403).json({ 
-        error: "You don't have permission to update this profile" 
-      });
-    }
 
   try {
     const updates = {};
