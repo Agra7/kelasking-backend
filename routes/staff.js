@@ -99,6 +99,7 @@ router.post("/add", verifyAdmin, upload.single("image"), async (req, res) => {
 
     res.json({
       message: "Staff added successfully!",
+      success: true,
         user
       
     });
@@ -163,20 +164,20 @@ router.post("/add", verifyAdmin, upload.single("image"), async (req, res) => {
 //   }
 // });
 
-// // DELETE - Delete staff (admin only)
-// router.delete("/:id", verifyAdmin, async (req, res) => {
-//   try {
-//     const { error } = await supabase
-//       .from("User")
-//       .delete()
-//       .eq("id", req.params.id);
+// DELETE - Delete staff (admin only)
+router.delete("/:id", verifyAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from("User")
+      .delete()
+      .eq("id", req.params.id);
 
-//     if (error) throw error;
+    if (error) throw error;
 
-//     res.json({ message: "Staff deleted successfully!" });
-//   } catch (err) {
-//     res.status(400).json({ error: err.message });
-//   }
-// });
+    res.json({ message: "Staff deleted successfully!" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 export default router;

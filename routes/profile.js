@@ -26,6 +26,23 @@ router.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
+router.get("/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: user, error } = await supabase
+      .from("User")
+      .select("id, user_nama, email, role, jabatan, ttl, no_hp, image_url")
+      .eq("id", id)
+      .single();
+
+    if (error) throw error;
+
+    res.json({ profile: user });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // PUT - Update user's profile
 router.put("/:id", authMiddleware, async (req, res) => {
   const targetId = req.params.id;
@@ -103,14 +120,14 @@ router.get("/role/:role", authMiddleware, async (req, res) => {
 });
 
 // PUT - Update profile image URL
-router.put("/:id/image", authMiddleware, upload.single("image"), async (req, res) => {
+router.put("/:id/image", upload.single("image"), async (req, res) => {
   const targetId = req.params.id;
-  const { role } = req.user;
+  // const { role } = req.user;
 
   // Hanya admin yang boleh
-  if (role !== "admin") {
-    return res.status(403).json({ error: "Only admin can update images" });
-  }
+  // if (role !== "admin") {
+  //   return res.status(403).json({ error: "Only admin can update images" });
+  // }
 
   try {
     // Ambil data user

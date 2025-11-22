@@ -37,14 +37,14 @@ const upload = multer({
 async function canModifyProject(userId, userRole, projectId) {
   if (userRole === "admin" || userRole === "sales") return true;
   
-  if (userRole === "PM") {
+  if (userRole === "pm") {
     const { data: project } = await supabase
       .from("Project")
-      .select("pic")
+      .select("ID_pic")
       .eq("id", projectId)
       .single();
     
-    return project && project.pic === userId;
+    return project && project.ID_pic === userId;
   }
   
   return false;
@@ -116,15 +116,9 @@ router.get("/", authMiddleware, async (req, res) => {
    ===================================================== */
 router.get("/:taskId", authMiddleware, async (req, res) => {
   const { projectId, taskId } = req.params;
-  const { id: userId, role: userRole } = req.user;
 
   try {
     // Check if user has access to this project
-    const hasAccess = await hasProjectAccess(userId, userRole, projectId);
-    
-    if (!hasAccess) {
-      return res.status(403).json({ error: "Access denied to this project" });
-    }
 
     const { data, error } = await supabase
       .from("Task")
@@ -176,7 +170,7 @@ router.post("/", authMiddleware, async (req, res) => {
         project_id: projectId,
         nama,
         deskripsi,
-        status: "not_started",
+        status: "in_progress",
         created_at: new Date().toISOString()
       }])
       .select();
@@ -328,14 +322,14 @@ router.post("/:taskId/upload", authMiddleware, requireRole(["staff"]), upload.si
    ✅ 8. PUT verify task (PM or Admin only)
    PM verifies task completion (with or without files)
    ===================================================== */
-router.put("/:taskId/verify", authMiddleware, requireRole(["PM", "admin"]), async (req, res) => {
+router.put("/:taskId/verify", authMiddleware, requireRole(["pm", "admin"]), async (req, res) => {
   const { projectId, taskId } = req.params;
   const { verified } = req.body;
   const { id: userId, role: userRole } = req.user;
 
   try {
     // If PM, check if they are PIC of this project
-    if (userRole === "PM") {
+    if (userRole === "pm") {
       const { data: project } = await supabase
         .from("Project")
         .select("pic")
@@ -410,7 +404,7 @@ router.get("/:taskId/upload", authMiddleware, async (req, res) => {
 /* =====================================================
    ✅ 7. DELETE file (Admin or PM only)
    ===================================================== */
-router.delete("/:taskId/upload", authMiddleware, requireRole(["admin", "PM"]), async (req, res) => {
+router.delete("/:taskId/upload", authMiddleware, requireRole(["admin", "sales", "staff"]), async (req, res) => {
   try {
     const { taskId, projectId } = req.params;
 

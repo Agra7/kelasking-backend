@@ -125,12 +125,11 @@ router.get("/", authMiddleware, async (req, res) => {
             client,
             deadline,
             status,
+            ID_pic,
             PIC:Project_ID_pic_fkey ( user_nama ),
             Sales:Project_ID_sales_fkey ( user_nama ),
             ProjectXUser(UserID_PIC, UserID_1, UserID_2, UserID_3)
-          `)
-          .or(`pic.eq.${userId},pic.is.null`)
-          .or("status.eq.active,status.eq.ongoing");
+          `);
         break;
 
       case "staff":
@@ -482,7 +481,7 @@ router.post("/", authMiddleware, requireRole(["admin", "sales"]), async (req, re
 // ============================================
 // PUT - Update project (Admin & Sales only)
 // ============================================
-router.put("/:id", authMiddleware, requireRole(["admin", "sales"]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole(["admin", "sales", "pm"]), async (req, res) => {
   const { id } = req.params;
   const {po, client, ID_pic, deadline, status, nama_sales} = req.body; // Can contain: po, client, pic, deadline, status, ID_sales
 
@@ -598,43 +597,69 @@ router.put("/:id/accept", authMiddleware, requireRole(["pm"]), async (req, res) 
 
 
 // ============================================
-// PUT - Assign staff to project (PIC only)
+// POST - Assign staff to project (Overwrite/Save Team)
 // ============================================
-router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  const { emailStaff } = req.body; // Array of up to 3 staff user IDs
+router.post("/:id/assign-staff", authMiddleware, async (req, res) => {
+  const { id } = req.params; // Project ID
+  const { emailStaff } = req.body; // Array email, contoh: ["a@mail.com", "b@mail.com"]
   const userId = req.user.id;
 
-  if (!Array.isArray(emailStaff) || emailStaff.length > 3) {
-    return res.status(400).json({ error: "emailStaff must be an array with max 3 items" });
+  // 1. Validasi Input
+  if (!Array.isArray(emailStaff)) {
+    return res.status(400).json({ error: "emailStaff harus berupa array" });
+  }
+
+  if (emailStaff.length > 3) {
+    return res.status(400).json({ error: "Maksimal hanya 3 staff yang diperbolehkan" });
   }
 
   try {
-    // Verify user is PIC of this project
+    // 2. Cek Permission: Pastikan User adalah PIC Project ini atau Admin
     const { data: project, error: projectError } = await supabase
       .from("Project")
       .select("ID_pic")
       .eq("id", id)
       .single();
 
-    if (projectError) throw projectError;
+    if (projectError || !project) {
+      return res.status(404).json({ error: "Project tidak ditemukan" });
+    }
     
     if (project.ID_pic !== userId && req.user.role !== "admin") {
-      return res.status(403).json({ error: "Only PIC or admin can assign staff" });
+      return res.status(403).json({ error: "Hanya PIC atau Admin yang dapat mengatur staff" });
     }
 
-    // Get user IDs for the provided staff emails
-    const { data: staff_ids, error: staffError } = await supabase
-      .from("User")
-      .select("id")
-      .in("email", emailStaff);
-    if (staffError) throw staffError;
+    // 3. Cari ID User berdasarkan Email yang dikirim
+    // Jika array kosong (hapus semua staff), kita skip step ini
+    let staffIdList = [];
 
+    if (emailStaff.length > 0) {
+      const { data: users, error: userError } = await supabase
+        .from("User") // Pastikan nama tabelnya 'User' (case sensitive sesuai DB anda)
+        .select("id, email")
+        .in("email", emailStaff);
+
+      if (userError) throw userError;
+
+      // Validasi: Pastikan semua email yang dikirim valid/ditemukan
+      if (users.length !== emailStaff.length) {
+         return res.status(400).json({ 
+           error: "Salah satu email staff tidak ditemukan di database" 
+         });
+      }
+
+      // Map hasil query ke array ID
+      // Note: Urutan dari database mungkin acak, kita sesuaikan urutan input jika perlu
+      // atau ambil saja id-nya langsung.
+      staffIdList = users.map(u => u.id);
+    }
+
+    // 4. Update tabel ProjectXUser
+    // Karena frontend mengirim FULL LIST (gabungan lama + baru),
+    // kita timpa UserID_1, 2, 3 sesuai urutan.
+    // Slot yang tidak ada datanya akan di-set ke NULL.
     
-    const staffIdList = staff_ids.map(staff => staff.id);
-
-    // Update ProjectXUser
-    const { data: staffList, error } = await supabase
+    const { data: updatedTeam, error: updateError } = await supabase
       .from("ProjectXUser")
       .update({
         UserID_1: staffIdList[0] || null,
@@ -642,27 +667,25 @@ router.put("/:id/assign-staff", authMiddleware, async (req, res) => {
         UserID_3: staffIdList[2] || null
       })
       .eq("ProjectID", id)
-       .select(`
+      .select(`
           id,
           ProjectID,
-          PIC:UserID_PIC ( id, user_nama, jabatan, email ),
-          Staff1:UserID_1 ( id, user_nama, jabatan, email ),
-          Staff2:UserID_2 ( id, user_nama, jabatan, email ),
-          Staff3:UserID_3 ( id, user_nama, jabatan, email )
-        `);
+          PIC:UserID_PIC ( id, user_nama, jabatan, email, image_url ),
+          Staff1:UserID_1 ( id, user_nama, jabatan, email, image_url ),
+          Staff2:UserID_2 ( id, user_nama, jabatan, email, image_url ),
+          Staff3:UserID_3 ( id, user_nama, jabatan, email, image_url )
+       `);
 
-    if (error) throw error;
-
-
-    // TODO: Send email invitations to assigned staff
-    // You can implement this later using SendGrid, Mailgun, etc.
+    if (updateError) throw updateError;
 
     res.json({ 
-      message: "Staff assigned successfully!", 
-      assigned_staff: staffList 
+      message: "Berhasil memperbarui anggota tim", 
+      team: updatedTeam 
     });
+
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error("Error assign staff:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

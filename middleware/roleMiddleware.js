@@ -31,8 +31,8 @@ export function requireRole(allowedRoles) {
 // Convenience middleware for common role checks
 export const requireAdmin = requireRole(["admin"]);
 export const requireSales = requireRole(["sales", "admin"]);
-export const requirePM = requireRole(["PM", "admin"]);
-export const requireStaff = requireRole(["staff", "PM", "admin"]);
+export const requirePM = requireRole(["pm", "admin"]);
+export const requireStaff = requireRole(["staff", "pm", "admin"]);
 
 // Check if user is admin
 export function isAdmin(req) {
@@ -41,7 +41,7 @@ export function isAdmin(req) {
 
 // Check if user is PM
 export function isPM(req) {
-  return req.user && req.user.role === "PM";
+  return req.user && req.user.role === "pm";
 }
 
 // Check if user is Sales
