@@ -310,6 +310,164 @@ router.get("/history", authMiddleware, requireRole(["admin"]), async (req, res) 
   }
 });
 
+// ============================================
+// GET - Get all sales users (for QR generation list)
+// Anyone can see sales list for QR generation
+// ============================================
+router.get("/sales-list", authMiddleware, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("User")
+      .select("id, user_nama, email, no_hp, jabatan")
+      .eq("role", "sales")
+      .order("user_nama", { ascending: true });
+
+    if (error) throw error;
+
+    // Format for frontend
+    const salesList = data.map(sale => ({
+      id: sale.id,
+      name: sale.user_nama,
+      phone: sale.no_hp || '-',
+      company: sale.jabatan || '-', // or use a different field
+      email: sale.email
+    }));
+
+    res.json({ sales: salesList });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================
+// POST - Create project from QR scan
+// This is called after scanning QR code
+// No auth required (anyone can scan and create)
+// ============================================
+router.post("/create-from-qr", async (req, res) => {
+  try {
+    const { 
+      customerId,      // Sales user ID from QR
+      customerName,    // Sales name
+      phone,
+      company,
+      email,
+      projectName,     // New project details
+      description,
+      budget,
+      po,
+      deadline
+    } = req.body;
+
+    // Validate required fields
+    if (!customerId || !projectName || !description) {
+      return res.status(400).json({ 
+        error: "customerId, projectName, and description are required" 
+      });
+    }
+
+    // Verify the sales user exists
+    const { data: salesUser, error: salesError } = await supabase
+      .from("User")
+      .select("id, user_nama, role")
+      .eq("id", customerId)
+      .eq("role", "sales")
+      .single();
+
+    if (salesError || !salesUser) {
+      return res.status(400).json({ error: "Invalid sales user" });
+    }
+
+    // Create project
+    const { data: project, error: projectError } = await supabase
+      .from("Project")
+      .insert([{
+        po: po || `QR-${Date.now()}`, // Auto-generate PO if not provided
+        client: company || customerName, // Use company name as client
+        ID_pic: null, // No PIC initially
+        deadline: deadline || null,
+        status: "active",
+        ID_sales: customerId,
+        // Store additional info in a notes field if you have one
+        // notes: `Budget: ${budget}, Description: ${description}`
+      }])
+      .select(`
+        *,
+        PIC:Project_ID_pic_fkey ( user_nama ),
+        Sales:Project_ID_sales_fkey ( user_nama )
+      `)
+      .single();
+
+    if (projectError) throw projectError;
+
+    res.json({
+      message: "Project created successfully from QR code!",
+      project,
+      salesInfo: {
+        name: salesUser.user_nama,
+        email: email,
+        phone: phone
+      }
+    });
+  } catch (err) {
+    console.error("QR project creation error:", err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================
+// GET - Verify sales user for QR generation
+// Check if a sales user exists before generating QR
+// ============================================
+router.get("/verify-sales/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: salesUser, error } = await supabase
+      .from("User")
+      .select("id, user_nama, email, no_hp, jabatan")
+      .eq("id", id)
+      .eq("role", "sales")
+      .single();
+
+    if (error || !salesUser) {
+      return res.status(404).json({ error: "Sales user not found" });
+    }
+
+    res.json({
+      valid: true,
+      sales: {
+        id: salesUser.id,
+        name: salesUser.user_nama,
+        email: salesUser.email,
+        phone: salesUser.no_hp || '-',
+        company: salesUser.jabatan || '-'
+      }
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================
+// POST - Log QR scan activity (optional)
+// Track when and who scanned a QR code
+// ============================================
+router.post("/log-qr-scan", async (req, res) => {
+  try {
+    const { customerId, scannedAt, projectName } = req.body;
+
+    // You could create a QRScanLog table to track this
+    // For now, just return success
+    
+    res.json({
+      message: "QR scan logged",
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 // ============================================
 // GET - Get single project details

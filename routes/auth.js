@@ -58,16 +58,15 @@ router.post("/login", async (req, res) => {
     
     // ✅ Kirim refresh token sebagai HttpOnly cookie
     res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,       // tidak bisa dibaca JavaScript
-      secure: true,         // hanya dikirim via HTTPS
-      sameSite: "strict",   // mencegah CSRF
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 hari
-      path: "/",            // cookie dikirim untuk semua route
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // allow localhost in development
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
     });
 
-
-    res.json({ 
-      accessToken,  
+    res.json({
+      accessToken,
       user: {
         id: user.id,
         user_nama: user.user_nama,
@@ -309,6 +308,23 @@ router.put("/change-password", authMiddleware, async (req, res) => {
   }
 });
 
+router.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase
+      .from("User")
+      .select("id, user_nama, email, role, jabatan")
+      .eq("id", req.user.id)
+      .single();
 
+    if (error || !user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Return user info (match shape your frontend expects)
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
