@@ -13,56 +13,27 @@ router.use("/:projectId/tasks", taskRoutes);
 // ============================================
 router.get("/overview", authMiddleware, requireRole(["admin"]), async (req, res) => {
   try {
-    // Get all projects with their details
-    const { data: allProjects, error: projectsError } = await supabase
-      .from("Project")
-      .select(`*`)
-      .eq("status", 'active');
+  // Panggil PostgreSQL function: project_overview()
+  const { data, error } = await supabase.rpc("project_overview");
 
-    if (projectsError) throw projectsError;
+  if (error) throw error;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  // Karena function biasanya return satu row
+  const result = data?.[0] || data;
 
-    // Count active projects
-    const activeProjects = allProjects.filter(p => 
-      p.status === 'active' || p.status === 'ongoing'
-    );
-
-    // Count taken/accepted projects (has PIC assigned)
-    const takenProjects = allProjects.filter(p => p.ID_pic !== null);
-
-    // Count projects close to deadline (within 7 days)
-    const closeToDeadline = allProjects.filter(p => {
-      if (!p.deadline) return false;
-      const deadline = new Date(p.deadline);
-      const daysUntil = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
-      return daysUntil >= 0 && daysUntil <= 2;
-    });
-
-    // Count projects past deadline
-    const pastDeadline = allProjects.filter(p => {
-      if (!p.deadline) return false;
-      const deadline = new Date(p.deadline);
-      return deadline < today && (p.status === 'active' || p.status === 'ongoing');
-    });
-
-    // Count finished projects
-    // const finishedProjects = allProjects.filter(p => 
-    //   p.status === 'completed' || p.status === 'finished'
-    // );
-
-    res.json({
-      overview: {
-        active_projects: activeProjects.length,
-        taken_projects: takenProjects.length,
-        close_to_deadline: closeToDeadline.length,
-        past_deadline: pastDeadline.length
-      }
-    });
+  return res.json({
+    overview: {
+      active_projects: result.active_projects,
+      taken_projects: result.taken_projects,
+      close_to_deadline: result.close_to_deadline,
+      past_deadline: result.past_deadline
+    }
+  });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error(err);
+    return res.status(400).json({ error: err.message });
   }
+
 });
 
 // ============================================
@@ -79,13 +50,14 @@ router.get("/", authMiddleware, async (req, res) => {
       case "admin":
         // Admin: See all active projects and finished projects
         query = supabase
-          .from("Project")
+          .from("projectstatus")
           .select(`
             id,
             po,
             client,
             deadline,
             status,
+            deadline_status,
             PIC:Project_ID_pic_fkey ( user_nama ),
             Sales:Project_ID_sales_fkey ( user_nama ),
             ProjectXUser(UserID_PIC, UserID_1, UserID_2, UserID_3)
@@ -102,7 +74,7 @@ router.get("/", authMiddleware, async (req, res) => {
       case "sales":
         // Sales: See active and taken/accepted projects
         query = supabase
-          .from("Project")
+          .from("projectstatus")
           .select(`
              id,
             po,
@@ -118,7 +90,7 @@ router.get("/", authMiddleware, async (req, res) => {
       case "pm":
         // PM: See projects taken by them + active projects without PIC
         query = supabase
-          .from("Project")
+          .from("projectstatus")
           .select(`
              id,
             po,
@@ -249,7 +221,7 @@ router.get("/available", authMiddleware, async (req, res) => {
 
 
     const { data, error } = await supabase
-      .from("Project")
+      .from("projectstatus")
       .select(`
         *,
         PIC:Project_ID_pic_fkey ( user_nama ),

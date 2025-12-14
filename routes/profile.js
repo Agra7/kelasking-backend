@@ -100,7 +100,7 @@ router.get("/role/:role", authMiddleware, async (req, res) => {
 
 
     const { role } = req.params;
-    const validRoles = ["admin", "sales", "PM", "staff"];
+    const validRoles = ["admin", "sales", "pm", "staff"];
 
     if (!validRoles.includes(role)) {
       return res.status(400).json({ error: "Invalid role" });

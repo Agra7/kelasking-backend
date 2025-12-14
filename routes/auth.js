@@ -21,7 +21,7 @@ router.post("/login", async (req, res) => {
     // Get user from database
     const { data: user, error } = await supabase
       .from("User")
-      .select("*")
+      .select("password_hash, id, role")
       .eq("email", email)
       .single();
     
@@ -51,7 +51,7 @@ router.post("/login", async (req, res) => {
     );
     
     // Update refresh token in database
-    await supabase
+     supabase
       .from("User")
       .update({ refresh_token: refreshToken })
       .eq("id", user.id);
